@@ -1,0 +1,226 @@
+---
+title: "Jacci Ziebert"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+```{r Libraries}
+library(ggplot2)
+library(dplyr)
+library(reshape2)
+library(expss)
+```
+
+```{r Load files}
+tweets <- readRDS("tweets_in_library_final_df.rds") %>%
+  select( -c(2:3, 7:13, 32:33), -games.spec) %>% filter(X != 513)
+# remove this game, wrong title
+
+tweets_unique <- unique(tweets[, c(5, 7:21)]) # unique games - R loves to do fatal error here
+
+api_mechanics <-  # Import ID codes for mechanics
+  jsonlite::fromJSON( 
+    "data/APImechanics.json") %>% as.data.frame() 
+api_categories <- # Import ID codes for categories
+  jsonlite::fromJSON( 
+    "data/APIcategories.json") %>% as.data.frame() 
+```
+
+```{r Analysis of game length using Chi Sq}
+tweets_game_count <- # First, get total counts (gcount) of games mentioned
+  tweets %>% group_by(games.name) %>% summarise(gcount = n())
+
+# Combine df to add 'gcount' column to unique games
+tweets_unique <- left_join(tweets_unique, tweets_game_count, by = "games.name")
+
+# Add game length category to unique games
+tweets_unique <- tweets_unique %>% mutate(glength = cut(  
+  games.max_playtime,
+  c(0,
+    30,
+    60,
+    90,
+    120,
+    500),
+  labels = c(
+    "Quick",
+    "Short",
+    "Medium",
+    "Long",
+    "Very long" #120-300 min
+  ),
+  include.lowest = F
+))
+# Make a table of count of game lengths by total game count and total reddit count
+glength_reddit_tweets <- cbind(tweets = 
+xtabs(tweets_unique$gcount~tweets_unique$glength), reddit = 
+xtabs(tweets_unique$games.reddit_all_time_count~tweets_unique$glength))
+
+chisq_glength <- chisq.test(x = glength_reddit_tweets[,'tweets'],
+                            p = glength_reddit_tweets[,'reddit'], rescale.p=TRUE)
+# rescale so reddit % equals 1
+
+chisq_glength # accept that they are the same/similar
+```
+I did a Chi Squared GOF to test whether Twitter gamers are similar to Reddit gamers based on game length. I separated games into 5 categories by 30 minute intervals based on maximum play time.  With a null hypothesis the groups are similar (based on distrubtion of game lengths), I found that there is evidence to suggest Twitter and Reddit gamers share similar game length preferences. p-value is 0.2069.
+
+```{r find popular game mechanics and game categories}
+# First, I need to extract variables in the df; they're currently in list bc of JSON
+gcategories <- unlist(tweets$games.categories) %>% as.data.frame()
+gmechanics <- unlist(tweets$games.mechanics) %>% as.data.frame()   
+
+#  Then I need to find what the category/mechanicss IDs mean
+# So I join with the imported ID codes
+tweets_mechanics <- left_join(gmechanics, api_mechanics, by = c("." = "mechanics.id")) 
+tweets_categories <- left_join(gcategories, api_categories, by = c("." = "categories.id")) 
+
+# This gives a count of each mechanic/category
+tweets_mechanics <- tweets_mechanics %>% group_by(mechanics.name) %>% summarise(mechcount = n()) 
+tweets_categories <- tweets_categories %>% group_by(categories.name) %>% summarise(catecount = n())
+```
+The rest of the code is making 4 bar charts
+```{r Charts - Most popular games}
+tweets_unique_top <- arrange(tweets_unique, desc(gcount)) %>% head(10L)
+
+g_tweet_chart <-
+      tweets_unique_top %>%
+      ggplot(mapping = aes(x = reorder(games.name, desc(-gcount)), y = gcount)) +
+      theme_classic() +
+      geom_bar(fill = "#428BCA", position = 'dodge', stat = 'identity') +
+      theme(axis.line=element_blank(),
+            legend.position = "none",
+            axis.ticks=element_blank(),
+            axis.text.x = element_blank(),
+            axis.text.y = element_text(size = 10, color = "black"),
+            axis.title.y = element_blank(),
+            plot.title = element_text(size = 10, color = "black", face = "bold", hjust = 1),
+            plot.background = element_rect(fill = "transparent", colour = NA),
+            panel.background = element_rect(fill = "transparent")
+      ) +
+        scale_y_continuous(expand = expansion(mult = c(0, .05)), name = "") +
+      labs(title = "Figure 1. Monopoly is the 3rd most Tweeted game") +
+      geom_text(
+        stat = 'identity',
+        color = "white",
+        size = 4,
+        aes(label = gcount),
+        fontface = "bold",
+        hjust = 1.25
+      ) +
+      coord_flip()
+ggsave("charts/tweet.png", plot = g_tweet_chart, width = 3.75, height = 4, units = "in")
+```
+
+```{r Charts - game mechanics}
+tweets_mechanics_top <- arrange(tweets_mechanics, desc(mechcount)) %>% top_n(10) # take top 10 games
+
+g_mech_chart <-
+      tweets_mechanics_top %>%
+      ggplot(mapping = aes(x = reorder(mechanics.name, desc(-mechcount)), y = mechcount)) +
+      theme_classic() +
+      geom_bar(fill = "#428BCA", position = 'dodge', stat = 'identity') +
+      theme(axis.line=element_blank(),
+            legend.position = "none",
+            axis.ticks=element_blank(),
+            axis.text.x = element_blank(),
+            axis.text.y = element_text(size = 10, color = "black"),
+            axis.title.y = element_blank(),
+            plot.title = element_text(size = 10, color = "black", face = "bold", hjust = 1),
+            plot.background = element_rect(fill = "transparent", colour = NA),
+            panel.background = element_rect(fill = "transparent")
+      ) +
+        scale_y_continuous(expand = expansion(mult = c(0, .05)), name = "") +
+      labs(title = c(paste("Figure 4. Hand management is the top game mechanic", paste("\nTwitter gamers prefer")))) +
+      # scale_y_continuous(expand = expansion(mult = c(0, .05)), name = "") +
+      geom_text(
+        stat = 'identity',
+        color = "white",
+        size = 4,
+        aes(label = mechcount),
+        fontface = "bold",
+        hjust = 1.25
+      ) +
+      coord_flip()
+ggsave("charts/mech.png", plot = g_mech_chart, width = 3.75, height = 4, units = "in")
+
+```
+
+```{r Charts - game categories}
+tweets_categories_top <- arrange(tweets_categories, desc(catecount)) %>% top_n(10) # take top 10 games
+
+g_cate_chart <-
+      tweets_categories_top %>%
+      ggplot(mapping = aes(x = reorder(categories.name, desc(-catecount)), y = catecount)) +
+      theme_classic() +
+      geom_bar(fill = "#428BCA", position = 'dodge', stat = 'identity') +
+      theme(axis.line=element_blank(),
+            legend.position = "none",
+            axis.ticks=element_blank(),
+            axis.text.x = element_blank(),
+            axis.text.y = element_text(size = 10, color = "black"),
+            axis.title.y = element_blank(),
+            plot.title = element_text(size = 10, color = "black", face = "bold", hjust = 1),
+            plot.background = element_rect(fill = "transparent", colour = NA),
+            panel.background = element_rect(fill = "transparent")
+      ) +
+        scale_y_continuous(expand = expansion(mult = c(0, .05)), name = "") +
+      labs(title = "Figure 3. What categories do Twitter gamers prefer?") +
+      # scale_y_continuous(expand = expansion(mult = c(0, .05)), name = "") +
+      geom_text(
+        stat = 'identity',
+        color = "white",
+        size = 4,
+        aes(label = catecount),
+        fontface = "bold",
+        hjust = 1.25
+      ) +
+      coord_flip()
+ggsave("charts/cate.png", plot = g_cate_chart, width = 3.75, height = 4, units = "in")
+```
+```{r Charts - Chi-Square}
+# These find the percent of total games by category for twitter/reddit
+glength_percents <- glength_reddit_tweets %>% as.data.frame()
+glength_percents$glen <- rownames(glength_percents)
+glength_percents <- glength_percents %>%
+  mutate(red_perc = reddit/sum(reddit),tweet_perc = tweets/sum(tweets))
+
+glength_chart <- melt(glength_percents, id_vars = "leng") %>%
+  filter(variable %in% c("tweet_perc","red_perc"))
+
+chi_chart <-
+      glength_chart %>%
+      ggplot(mapping = aes(x = reorder(glen, desc(-value)), y = value, fill = variable)) +
+      theme_classic() +
+      geom_bar(position = 'dodge', stat = 'identity') +
+      theme(axis.line=element_blank(),
+            # legend.position = "none",
+            axis.ticks=element_blank(),
+            axis.text.x = element_blank(),
+            axis.text.y = element_text(size = 10, color = "black"),
+            axis.title.y = element_blank(),
+            plot.title = element_text(size = 10, color = "black", face = "bold", hjust = .25),
+            plot.background = element_rect(fill = "transparent", colour = NA),
+            panel.background = element_rect(fill = "transparent")
+      ) +
+        scale_y_continuous(expand = expansion(mult = c(0, .05)), name = "") +
+      labs(title = c(paste("Figure 2. Twitter and Reddit gamers share similar ", paste("\ngame preferences in game lengths")))) +
+      geom_text(
+        stat = 'identity',
+        color = "white",
+        size = 4,
+        aes(label = scales::percent(value, accuracy = 2)),
+        position = position_dodge(width =.9),
+        fontface = "bold",
+        hjust = 1.25
+      ) +
+      scale_fill_manual(
+        name = "",
+        values = c("red_perc" = "#D50032", "tweet_perc" = "#428BCA"),
+        labels = c("Reddit", "Twitter")
+      ) +
+      coord_flip()
+ggsave("charts/chi.png", plot = chi_chart, width = 3.75, height = 4, units = "in")
+```
+
+

@@ -1,0 +1,286 @@
+---
+title: "R Notebook"
+output:
+  pdf_document: default
+  html_notebook: default
+name: Jacci Ziebert
+---
+
+```{r Libraries}
+library(dplyr)
+library(tidyverse)
+# library(sjmisc)
+# library(data.table)
+setwd = "C:/Users/jacci/Documents/DS 710/Final Project/"
+```
+
+```{r Load Game Library and Tweets}
+# Import 1,000 games (API limit was 100 :( )
+import_games_libraries <- function(){
+  setwd = "C:/Users/jacci/Documents/DS 710/Final Project/"
+games_library0 <-
+  jsonlite::fromJSON( 
+    "data/game_list_ArenaAPI.json", flatten = TRUE) %>% as.data.frame() %>%
+  select(!c(games.weight_amount, games.weight_units, games.size_units)) 
+
+games_library100 <-
+  jsonlite::fromJSON( 
+    "data/game_list_ArenaAPI_next100.json", flatten = TRUE) %>%
+  as.data.frame() %>% select(!c(games.weight_amount, games.weight_units, games.size_units))
+
+games_library200 <-
+  jsonlite::fromJSON( 
+    "data/game_list_ArenaAPI_next200.json", flatten = TRUE) %>% as.data.frame() %>% select(!c(games.weight_amount, games.weight_units, games.size_units))
+
+games_library300 <-
+  jsonlite::fromJSON( 
+    "data/game_list_ArenaAPI_next300.json", flatten = TRUE) %>% as.data.frame() %>% select(!c(games.weight_amount, games.weight_units, games.size_units))
+
+games_library400 <-
+  jsonlite::fromJSON( 
+    "data/game_list_ArenaAPI_next400.json", flatten = TRUE) %>% as.data.frame() %>% select(!c(games.weight_amount, games.weight_units, games.size_units))
+
+games_library500 <-
+  jsonlite::fromJSON( 
+    "data/game_list_ArenaAPI_next500.json", flatten = TRUE) %>% as.data.frame() %>% select(!c(games.weight_amount, games.weight_units, games.size_units))
+
+games_library600 <-
+  jsonlite::fromJSON( 
+    "data/game_list_ArenaAPI_next600.json", flatten = TRUE) %>% as.data.frame() %>% select(!c(games.size_units))
+
+games_library700 <-
+  jsonlite::fromJSON( 
+    "data/game_list_ArenaAPI_next700.json", flatten = TRUE) %>% as.data.frame() %>% select(!c(games.weight_amount))
+games_library800 <-
+  jsonlite::fromJSON( 
+    "data/game_list_ArenaAPI_next800.json", flatten = TRUE) %>% as.data.frame() %>% select(!c(games.weight_amount, games.weight_units, games.size_units))
+
+games_library900 <-
+  jsonlite::fromJSON( 
+    "data/game_list_ArenaAPI_next900.json", flatten = TRUE) %>% as.data.frame() %>% select(!c(games.weight_amount, games.weight_units, games.size_units))
+
+combine <-
+  do.call(
+    "rbind",
+    list(
+      games_library0,
+      games_library100,
+      games_library200,
+      games_library300,
+      games_library400,
+      games_library500,
+      games_library600,
+      games_library700,
+      games_library800,
+      games_library900
+    )
+  )
+return (combine)
+}
+
+games_library <- import_games_libraries() # Combined to have 1,000 games in game library
+games_library <- games_library %>% select(!c(9:13, 17, 18, 21:24, 27:32, 39:43)) # remove columns
+
+games_tweets4302020 <- read.csv("cleaned_games4302020.csv", header = T) #import cleaned tweets
+```
+
+```{r Rename Games Titles in Library for Game Match}
+# remove old games, same games, different years from library
+games_library <- subset(games_library, !games.id %in% c("RC1Xo1rx0s","DxWHvojIM1", "Zd3nGqEu4q","VOHrXgQLzH")) 
+
+#Relabel titles to their more popular name
+games_library <- games_library %>% mutate(
+    games.name = case_when(
+      games.name == "After The Virus Strategy Board Game" ~ "After The Virus",
+      games.name == "A Game of Thrones: The Board Game Second Edition" ~ "Game of Thrones",
+      games.name == "Agricola (Revised Edition)" ~ "Agricola",
+      games.name == "Arkham Horror (Third Edition)" ~ "Arkham Horror",
+      games.name == "Clank! A Deck-Building Adventure" ~ "Clank",
+      games.name == "Fleet: Wharfside" ~ "Fleet",
+      games.name == "Isle of Skye: From Chieftain to King" ~ "Isle of Skye",
+      games.name == "Legendary: A Marvel Deck Building Game" ~ "Legendary: A Marvel",
+      games.name == "Pax Pamir (Second Edition)" ~ "Pax Pamir",
+      games.name == "T.I.M.E. Stories" ~ "	TIME Stories",
+      games.name == "Fury of Dracula (Second Edition)" ~ "Fury of Dracula",
+      games.name == "Dominion: Second Edition" ~ "Dominion",
+      games.name == "Viticulture: Essential Edition" ~ "Viticulture",
+      games.name == "Arkham Horror: The Card Game" ~ "Arkham HorrorLCG",
+      games.name == "Railroad Ink: Deep Blue Edition" ~ "Railroad Ink",
+      games.name == "Dead of Winter: A Crossroads Game" ~ "Dead of Winter",
+      games.name == "Deception: Murder in Hong Kong" ~ "Deception",
+      games.name == "Mansions of Madness: 2nd Edition" ~ "Mansions of Madness",
+      games.name == "KeyForge: Call of the Archons" ~ "Keyforge",
+      games.name == "Battlestar Galactica: The Board Game" ~ "Battlestar Galactica",
+      games.name == "War of the Ring (Second Edition)" ~ "War of the Ring",
+      games.name == "Commands and Colors: Ancients Board Game" ~ "Commands and Colors",
+      games.name == "Descent: Journeys in the Dark 2nd Edition" ~ "Descent",
+      games.name == "Robinson Crusoe Adventures on the Cursed Island" ~ "Robinson Crusoe",
+      games.name == "Detective: A Modern Crime Game" ~ "Detective",
+      games.name == games.name ~ games.name
+    )
+  )
+
+ # remove special char., lowercases. Adds new column of a 1 word game title for matching
+games_library <- games_library %>% mutate(short.game.name = tolower(gsub(" |:|!|'|-","", games.name)))
+
+# Also remove odd characters
+long_game_title <- tolower(gsub(":|!|'","", games_library$games.name))
+
+# These lists will be used to match game titles for clean.full.text/hashtags using str_extract_all.
+# Separated by a line (for "or").
+pattern_game_title <- paste(games_library$short.game.name, collapse="|")
+pattern_long_game_title <- paste(long_game_title, collapse="|")
+```
+
+```{r Clean hashtags/tweets so titles match}
+# Lower case the tweets, so game titles match to them
+games_tweets4302020$clean.full.text <- tolower(as.character(games_tweets4302020$clean.full.text))
+games_tweets4302020$hashtags <- as.character(games_tweets4302020$hashtags)
+
+# #Rename certain hashtags so they match to game titles
+games_tweets4302020 <- games_tweets4302020 %>% mutate(
+  hashtags = case_when(
+    hashtags == "thiswarofmine" ~ "thiswarofminetheboardgame",
+    hashtags == "legendaryencountersanaliendeckbuildinggame" ~ "legendaryencountersalienexpansion",
+    hashtags == "marcopoloiiintheserviceofthekhan" ~ "TheVoyagesofMarcoPolo",
+    hashtags == "bÃ¤renpark" ~ "barenpark",
+    hashtags == "marcopolo" ~ "TheVoyagesofMarcoPolo",
+    hashtags == "saintpetersburg" ~ "st.petersburg",
+    hashtags == "bã¤renpark" ~ "barenpark",
+    hashtags == "bÃ¤renparkthebadnewsbears" ~ "barenpark",
+    hashtags == "clank!legacyacquisitionsincorporated" ~ "clank",
+    hashtags == "legendaryencountersafireflydeckbuildinggame" ~ "legendaryencountersalienexpansion",
+    hashtags == "tempurra" ~ "sushigo",
+    hashtags == "caverna" ~ "	CavernaTheCaveFarmers",
+    hashtags == "twilightimperium(thirdedition)" ~ "twilightimperium4thedition)",
+    hashtags == "lewisandclark" ~ "lewis&clark",
+    hashtags == "legendarybuffythevampireslayer" ~ "legendaryencountersalienexpansion",
+    hashtags == "detectiveamoderncrimeboardgame" ~ "detective",
+    hashtags == "Imperial Settlers: Empires of the North" ~ "EmpiresoftheNorth",
+    hashtags == "carcasone" ~ "carcassonne",
+    hashtags == "orlÃ©ans" ~ "orléans",
+    hashtags == hashtags ~ hashtags
+  ),  clean.full.text = case_when(
+    clean.full.text == "lost to my wife in isle of cats" ~ "the isle of cats",
+    clean.full.text == "empires of the north. 6 unique factions. 4 unique solo scenarios with different themes, goals, and special rules." ~ "empires of the north",
+    clean.full.text == "playing bunnings kingdom on tabletop!! game night social distancing!! love my kids!! @ pennsboro, west virginia" ~ "bunny kingdom",
+    clean.full.text == clean.full.text ~ clean.full.text
+  )
+)
+```
+
+```{r Tweet Analysis - extract game titles from library}
+# This extracts all matching titles that are a match in clean.full.text and hashtag to match
+# in pattern_long_game_titles and in pattern_game_title, respectively. Output
+# is a huge table showing potential game title matches.
+
+# This extracts all matching titles that are a match in titles / hashtags
+short_title <-
+  str_extract_all(games_tweets4302020$hashtags, pattern_game_title,
+                  simplify = TRUE) %>%  as.data.frame() %>%  rename(
+        V1.short = V1,
+        # don't want duplicate columns names for later, so I'll rename them
+        V2.short = V2,
+        V3.short = V3,
+        V4.short = V4,
+        V5.short = V5
+      )
+
+# This extracts all matching titles that are a match in long titles / clean.full.text
+long_title <-
+  str_extract_all(games_tweets4302020$clean.full.text,
+                  pattern_long_game_title,
+                  simplify = TRUE) %>% as.data.frame()
+long_title <-
+  long_title %>% # remove spaces so to compare to hashtag match
+  apply(., 2, function(thisrow)
+    gsub(" ", "", thisrow))
+
+# Combines these two matches into a large, ugly df
+titles_match <- cbind(short_title, long_title)
+
+# Removes certain game titles that shouldn't be in list
+titles_match_removed <- titles_match %>%
+  apply(., 2, function(thisrow)
+    gsub(
+      "^ra$|^go$|^sol$|^tak$|^set$|^bus$|^qe$|^steam$|^hate$|^friday$|^haven$","", thisrow
+    ))
+
+# Combine to the tweets with the matches found
+games_tweets_matches <-
+  cbind(games_tweets4302020, titles_match_removed) %>% mutate_all( ~ replace(., . == "", NA))
+```
+
+```{r Find unique game title in a tweet}
+# This looks at the large, ugly df and finds all unique matches and put them into a single column
+games_tweets_unique <- games_tweets_matches %>% mutate(uniq_titles =
+    apply(., 1, function(thisrow) 
+        na.omit(unique(thisrow[c(14:24)]))))
+
+games_tweets_unique$uniq_titles[games_tweets_unique$uniq_titles == 'character(0)'] <- NA
+
+games_only_matches <- games_tweets_unique %>% filter(!is.na(uniq_titles))
+```
+
+```{r data cleaning of titles and remove multiple titles}
+# So matches may have more than one element, I looked through these individually and cleaned
+# it so there only 1 game title
+games_only_matches$uniq_titles <- as.character(games_only_matches$uniq_titles)
+games_only_matches <-
+  games_only_matches %>% mutate(
+    uniq_titles = case_when(
+      uniq_titles == 'welcometo, q' ~ "welcometo...",
+      uniq_titles == 'welcometo.l' ~ "welcometo...",
+      uniq_titles == 'c("backgammon", "cash")' ~ "backgammon",
+      uniq_titles == 'c("imperialsettlers", "empires")' ~ "imperialsettlers",
+      uniq_titles == 'c("kingdomino", "spiritisland")' ~ "spiritisland",
+      uniq_titles == 'c("reef", "theisleofcats")' ~ "theisleofcats",
+      uniq_titles == 'c("arboretum", "renegade")' ~ "arboretum",
+      uniq_titles == 'c("taboo", "monopoly")' ~ "monopoly",
+      uniq_titles == 'c("coup", "dominion")' ~ "dominion",
+      uniq_titles == 'c("rhinohero", "evolution")' ~ "rhinohero",
+      uniq_titles == 'c("commandsandcolors", "evolution")' ~ "commandsandcolors",
+      uniq_titles == 'c("tickettoride", "clank", "munchkin", "dragonwood")' ~ "tickettoride",
+      uniq_titles == 'c("centuryspiceroad", "splendor", "agricola")' ~ "agricola",
+      uniq_titles == 'c("scrabble", "sequence", "hearts")' ~ "scrabble",
+      uniq_titles == 'c("7wonders", "coup")' ~ '7wonders',
+      uniq_titles == 'c("arkhamhorror", "terraformingmars", "trickerion", "wingspan")' ~ 'terraformingmars',
+      uniq_titles == 'c("azul", "centuryspiceroad", "catan")' ~ 'catan',
+      uniq_titles == 'c("civilization", "bang")' ~ 'civilization',
+      uniq_titles == 'c("coup", "mexica")' ~ 'mexica',
+      uniq_titles == 'c("diceforge", "concept", "exit")' ~ 'diceforge',
+      uniq_titles == 'c("dominion", "coup")' ~ 'coup',
+      uniq_titles == 'c("dungeonpetz", "oceans")' ~ 'dungeonpetz',
+      uniq_titles == 'c("empires", "fantasticfactories")' ~ 'fantasticfactories',
+      uniq_titles == 'c("everdell", "inis")' ~ 'everdell',
+      uniq_titles == 'c("evolution", "oceans")' ~ 'evolution',
+      uniq_titles == 'c("fantasticfactories", "bridge", "fluxx", "fleet")' ~ 'fantasticfactories',
+      uniq_titles == 'c("mageknight", "gloomhaven")' ~ 'gloomhaven',
+      uniq_titles == 'c("monopoly", "inis")' ~ 'monopoly',
+      uniq_titles == 'c("mylittlescythe", "scythe")' ~ 'scythe',
+      uniq_titles == 'c("oraetlabora", "lehavre")' ~ 'lehavre',
+      uniq_titles == 'c("sagrada", "azul")' ~ 'azul',
+      uniq_titles == 'c("sagrada", "stratego", "keyforge")' ~ 'sagrada',
+      uniq_titles == 'c("scythe", "exit")' ~ 'scythe',
+      uniq_titles == 'c("sprawlopolis", "exit")' ~ 'sprawlopolis',
+      uniq_titles == 'c("starrealms", "colony")' ~ 'starrealms',
+      uniq_titles == 'c("tobago", "coup")' ~ 'tobago',
+      uniq_titles == 'c("viticulture", "tuscanyessentialedition")' ~ 'viticulture',
+      uniq_titles == '' ~ '',
+      uniq_titles == uniq_titles ~ uniq_titles
+    )
+  )
+```
+
+```{r Combine to make df for data analysis -data_analysis_for_final_df.rmd}
+tweets_in_library <-
+  games_only_matches %>% select(-c(12:27)) %>% left_join(. , games_library,
+      by = (c("uniq_titles" = "short.game.name")))
+
+# saveRDS(tweets_in_library, file = "tweets_in_library_final_df.rds") # save file for analysis
+tosave <- tweets_in_library[c(1:100), - c(24:28)] # save 100 as a csv, remove columns that were still
+# in a list (i.e. game catorgories, mechanics)
+# write.csv(tosave, file = "final_game_df_top_100.csv")
+
+```
+
